@@ -86,7 +86,7 @@ async function startSystem() {
     logger.info(`可用的大模型提供商: ${availableProviders.join(', ')}`);
     logger.info(`默认使用的大模型: ${defaultProvider}`);
     
-    logger.info('系统启动完成');
+    logger.info('系统启动完成，步骤1已完成');
   } catch (error) {
     logger.error('系统启动失败', { error: error.message, stack: error.stack });
     process.exit(1);
