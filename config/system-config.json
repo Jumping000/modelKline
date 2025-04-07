@@ -1,79 +1,81 @@
 {
-  // 配置文件根对象
   "system": {
-    // 系统全局配置部分
-    "name": "OKX量化交易系统", // 系统名称
-    "version": "0.1.0", // 系统版本号
-    "logLevel": "info", // 日志级别设置
-    "maxLogFileSize": "10m", // 单个日志文件最大大小
-    "maxLogFiles": 10, // 最大保留的日志文件数量
-    "timeZone": "Asia/Shanghai" // 系统时区设置
+    "name": "OKX量化交易系统",
+    "version": "0.1.0",
+    "logLevel": "info",
+    "maxLogFileSize": "10m",
+    "maxLogFiles": 10,
+    "timeZone": "Asia/Shanghai"
   },
   "market": {
-    // 市场相关配置
-    "defaultSymbol": "UNI-USDT", // 默认交易对，已修改为UNI-USDT
-    "supportedSymbols": ["BTC-USDT", "ETH-USDT", "SOL-USDT", "UNI-USDT"], // 支持的交易对列表，已添加UNI-USDT
-    "defaultKlineInterval": "1m", // 默认K线时间间隔
-    "supportedIntervals": ["1m", "5m", "15m", "30m", "1h", "4h", "1d"] // 支持的K线时间间隔列表
+    "defaultSymbol": "UNI-USDT",
+    "supportedSymbols": ["BTC-USDT", "ETH-USDT", "SOL-USDT", "UNI-USDT"],
+    "defaultKlineInterval": "1m",
+    "supportedIntervals": ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
   },
   "agents": {
-    // 智能体配置部分
     "kLinePatternAgent": {
-      // K线形态识别智能体
-      "enabled": true, // 是否启用该智能体
-      "weight": 0.8, // 该智能体在决策中的权重
+      "enabled": true,
+      "weight": 0.8,
       "parameters": {
-        // 智能体特定参数
-        "patterns": ["hammer", "shootingStar", "doji", "engulfing"] // 需要识别的K线形态列表
+        "patterns": ["hammer", "shootingStar", "doji", "engulfing"]
       }
     },
     "candlestickPatternAgent": {
-      // 蜡烛图形态识别智能体
-      "enabled": true, // 是否启用该智能体
-      "weight": 0.7, // 该智能体在决策中的权重
+      "enabled": true,
+      "weight": 0.7,
       "parameters": {
-        // 智能体特定参数
-        "patterns": ["headAndShoulders", "doubleTop", "doubleBottom", "triangle"] // 需要识别的蜡烛图形态列表
+        "patterns": ["headAndShoulders", "doubleTop", "doubleBottom", "triangle"]
       }
     },
     "marketSentimentAgent": {
-      // 市场情绪分析智能体
-      "enabled": true, // 是否启用该智能体
-      "weight": 0.6, // 该智能体在决策中的权重
+      "enabled": true,
+      "weight": 0.6,
       "parameters": {
-        // 智能体特定参数
-        "dataWindow": 24, // 数据分析窗口大小（小时）
-        "updateInterval": 3600 // 更新间隔（秒）
+        "dataWindow": 24,
+        "updateInterval": 3600
       }
     }
   },
   "trading": {
-    // 交易相关配置
     "riskManagement": {
-      // 风险管理配置
-      "maxPositionSize": 0.1, // 最大仓位比例（占总资产百分比）
-      "stopLossPercentage": 0.02, // 止损百分比
-      "takeProfitPercentage": 0.05, // 止盈百分比
-      "maxDrawdown": 0.15 // 最大允许回撤比例
+      "maxPositionSize": 0.1,
+      "stopLossPercentage": 0.02,
+      "takeProfitPercentage": 0.05,
+      "maxDrawdown": 0.15
     },
     "executionSettings": {
-      // 执行设置
-      "orderType": "limit", // 订单类型（限价单）
-      "slippageTolerance": 0.001, // 滑点容忍度
-      "retryAttempts": 3, // 失败重试次数
-      "retryDelay": 1000 // 重试延迟（毫秒）
+      "orderType": "limit",
+      "slippageTolerance": 0.001,
+      "retryAttempts": 3,
+      "retryDelay": 1000
     }
   },
   "database": {
-    // 数据库配置
-    "connectionPoolSize": 10, // 连接池大小
-    "connectionTimeout": 30000, // 连接超时时间（毫秒）
-    "queryTimeout": 5000 // 查询超时时间（毫秒）
+    "connectionPoolSize": 10,
+    "connectionTimeout": 30000,
+    "queryTimeout": 5000
   },
   "cache": {
-    // 缓存配置
-    "ttlSeconds": 300, // 缓存生存时间（秒）
-    "maxCacheSize": "1gb", // 最大缓存大小
-    "preloadMarketData": true // 是否预加载市场数据
+    "ttlSeconds": 300,
+    "maxCacheSize": "1gb",
+    "preloadMarketData": true
+  },
+  "llm": {
+    "defaultProvider": "gemini",
+    "requestTimeout": 30000,
+    "maxRetryAttempts": 2,
+    "providers": {
+      "gemini": {
+        "model": "gemini-pro",
+        "temperature": 0.4,
+        "maxTokens": 1024
+      },
+      "openai": {
+        "model": "gpt-3.5-turbo",
+        "temperature": 0.5,
+        "maxTokens": 1024
+      }
+    }
   }
 }

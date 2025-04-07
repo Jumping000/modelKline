@@ -1,131 +1,144 @@
 /**
  * 数据库连接模块
- * 负责管理MySQL数据库连接池
+ * 负责MySQL数据库连接管理
  */
 
 const mysql = require('mysql2/promise');
 const { createModuleLogger } = require('../utils/logger');
-const { getSystemConfig } = require('../config/config-loader');
 
+// 创建日志记录器
 const logger = createModuleLogger('Database');
+
+// 数据库连接配置
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306'),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'okx_trading',
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10'),
+  connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000'),
+  waitForConnections: true,
+  queueLimit: 0
+};
+
+// 数据库连接池
 let pool = null;
+
+// 最大重试次数
+const MAX_RETRY_COUNT = 3;
+// 重试间隔(毫秒)
+const RETRY_INTERVAL = 2000;
 
 /**
  * 初始化数据库连接池
- * @returns {Promise<boolean>} 是否成功初始化
+ * @returns {Promise<boolean>} 连接是否成功
  */
 async function initDatabase() {
   try {
-    const config = getSystemConfig();
-    const dbConfig = config.database;
+    logger.info('正在初始化数据库连接...');
     
-    // 从环境变量中获取数据库连接信息
-    const connectionConfig = {
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT) || 3306,
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'okx_trading_system',
-      connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || dbConfig.connectionPoolSize || 10,
-      connectTimeout: parseInt(process.env.DB_TIMEOUT) || dbConfig.connectionTimeout || 30000,
-      waitForConnections: true,
-      queueLimit: 0
-    };
+    // 创建连接池
+    pool = mysql.createPool(dbConfig);
     
-    logger.info('正在创建数据库连接池...');
-    pool = mysql.createPool(connectionConfig);
+    // 测试连接
+    const conn = await pool.getConnection();
+    await conn.query('SELECT 1 AS result');
+    conn.release();
     
-    // 如果需要在启动时验证连接，则执行验证
-    if (dbConfig.validateOnStartup) {
-      const isConnected = await validateConnection(dbConfig.retryConnectAttempts || 3);
-      if (!isConnected) {
-        logger.error('数据库连接验证失败，请检查配置');
-        return false;
-      }
-    }
-    
-    logger.info('数据库连接池初始化成功');
+    logger.info('数据库连接已建立');
     return true;
   } catch (error) {
-    logger.error('数据库连接池初始化失败', { error: error.message });
-    return false;
+    logger.error('数据库连接初始化失败', { error: error.message });
+    
+    // 重试连接
+    logger.info(`将在${RETRY_INTERVAL/1000}秒后尝试重新连接数据库...`);
+    return await retryConnect(1);
   }
 }
 
 /**
- * 验证数据库连接
- * @param {number} retryAttempts - 重试次数
+ * 重试数据库连接
+ * @param {number} retryCount 当前重试次数
  * @returns {Promise<boolean>} 连接是否成功
  */
-async function validateConnection(retryAttempts = 3) {
-  let attempts = 0;
-  
-  while (attempts < retryAttempts) {
-    try {
-      attempts++;
-      logger.info(`正在验证数据库连接 (尝试 ${attempts}/${retryAttempts})...`);
-      
-      // 从连接池获取连接并执行简单查询
-      const connection = await pool.getConnection();
-      const [rows] = await connection.query('SELECT 1 AS connection_test');
-      connection.release();
-      
-      if (rows && rows.length > 0 && rows[0].connection_test === 1) {
-        logger.info('数据库连接验证成功');
-        return true;
-      }
-    } catch (error) {
-      const retryDelay = Math.pow(2, attempts) * 1000; // 指数退避策略
-      logger.warn(`数据库连接验证失败 (尝试 ${attempts}/${retryAttempts})，将在 ${retryDelay}ms 后重试`, { 
-        error: error.message 
-      });
-      
-      // 最后一次尝试失败就直接返回失败
-      if (attempts >= retryAttempts) {
-        logger.error('数据库连接验证失败，已达到最大重试次数', { error: error.message });
-        return false;
-      }
-      
-      // 等待一段时间后重试
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
+async function retryConnect(retryCount) {
+  if (retryCount > MAX_RETRY_COUNT) {
+    logger.error(`数据库连接失败，已超过最大重试次数(${MAX_RETRY_COUNT})`);
+    return false;
   }
   
-  return false;
+  return new Promise(resolve => {
+    setTimeout(async () => {
+      try {
+        logger.info(`尝试重新连接数据库(${retryCount}/${MAX_RETRY_COUNT})...`);
+        
+        pool = mysql.createPool(dbConfig);
+        const conn = await pool.getConnection();
+        await conn.query('SELECT 1 AS result');
+        conn.release();
+        
+        logger.info('数据库重新连接成功');
+        resolve(true);
+      } catch (error) {
+        logger.error(`数据库重新连接失败(${retryCount}/${MAX_RETRY_COUNT})`, { error: error.message });
+        resolve(await retryConnect(retryCount + 1));
+      }
+    }, RETRY_INTERVAL);
+  });
 }
 
 /**
- * 获取数据库连接
- * @returns {Promise<Connection>} 数据库连接对象
+ * 获取数据库连接池
+ * @returns {Pool} 数据库连接池
  */
-async function getConnection() {
+function getPool() {
   if (!pool) {
     throw new Error('数据库连接池尚未初始化');
   }
-  return pool.getConnection();
+  return pool;
 }
 
 /**
- * 执行SQL查询
- * @param {string} sql - SQL查询语句
- * @param {Array} params - 查询参数
+ * 执行数据库查询
+ * @param {string} sql SQL查询语句
+ * @param {Array} params 查询参数
  * @returns {Promise<Array>} 查询结果
  */
 async function query(sql, params = []) {
   try {
-    const connection = await pool.getConnection();
-    const [results] = await connection.query(sql, params);
-    connection.release();
-    return results;
+    const [rows] = await pool.execute(sql, params);
+    return rows;
   } catch (error) {
-    logger.error('SQL查询执行失败', { sql, error: error.message });
+    logger.error('数据库查询失败', { error: error.message, sql });
     throw error;
   }
 }
 
 /**
+ * 执行事务
+ * @param {Function} callback 事务回调函数
+ * @returns {Promise<any>} 事务执行结果
+ */
+async function transaction(callback) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const result = await callback(conn);
+    await conn.commit();
+    return result;
+  } catch (error) {
+    await conn.rollback();
+    logger.error('事务执行失败', { error: error.message });
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
  * 关闭数据库连接池
- * @returns {Promise<void>} 
+ * @returns {Promise<void>}
  */
 async function closeDatabase() {
   if (pool) {
@@ -138,8 +151,8 @@ async function closeDatabase() {
 
 module.exports = {
   initDatabase,
-  validateConnection,
-  getConnection,
+  getPool,
   query,
+  transaction,
   closeDatabase
 }; 

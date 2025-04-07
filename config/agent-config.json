@@ -1,0 +1,61 @@
+{
+  "kLinePatternAgent": {
+    "enabled": true,
+    "weight": 0.8,
+    "parameters": {
+      "patterns": ["hammer", "shootingStar", "doji", "engulfing", "morningstar", "eveningstar"],
+      "minConfidence": 0.7,
+      "timeframes": ["1h", "4h", "1d"]
+    }
+  },
+  "candlestickPatternAgent": {
+    "enabled": true,
+    "weight": 0.7,
+    "parameters": {
+      "patterns": ["headAndShoulders", "doubleTop", "doubleBottom", "triangle", "flag", "pennant"],
+      "confirmationBars": 2,
+      "timeframes": ["4h", "1d", "1w"]
+    }
+  },
+  "cyclicalAnalysisAgent": {
+    "enabled": false,
+    "weight": 0.5,
+    "parameters": {
+      "windowSize": 120,
+      "minCycles": 3,
+      "significance": 0.7,
+      "timeframes": ["1d", "1w"]
+    }
+  },
+  "marketSentimentAgent": {
+    "enabled": true,
+    "weight": 0.6,
+    "parameters": {
+      "dataWindow": 24,
+      "updateInterval": 3600,
+      "sentimentSources": ["news", "social"],
+      "minConfidence": 0.7
+    }
+  },
+  "realTimeMarketAgent": {
+    "enabled": true,
+    "weight": 0.9,
+    "parameters": {
+      "updateInterval": 30,
+      "depth": 20,
+      "volatilityWindow": 24,
+      "indicators": ["volume", "spread", "momentum", "vwap"]
+    }
+  },
+  "trendCaptureAgent": {
+    "enabled": true,
+    "weight": 0.75,
+    "parameters": {
+      "shortPeriod": 9,
+      "longPeriod": 21,
+      "signalPeriod": 7,
+      "trendStrength": 0.3,
+      "timeframes": ["1h", "4h", "1d"]
+    }
+  }
+} 

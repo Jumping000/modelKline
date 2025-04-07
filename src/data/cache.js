@@ -1,56 +1,60 @@
 /**
- * 缓存模块
- * 负责管理Redis缓存连接和操作
+ * Redis缓存模块
+ * 负责管理Redis连接和缓存操作
  */
 
-const redis = require('redis');
+const { createClient } = require('redis');
 const { createModuleLogger } = require('../utils/logger');
-const { getSystemConfig } = require('../config/config-loader');
 
+// 创建日志记录器
 const logger = createModuleLogger('Cache');
-let client = null;
+
+// Redis客户端实例
+let redisClient = null;
+
+// Redis配置
+const redisConfig = {
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  username: process.env.REDIS_USERNAME || '',
+  password: process.env.REDIS_PASSWORD || '',
+  database: parseInt(process.env.REDIS_DB || '0'),
+  retryStrategy: (times) => Math.min(times * 100, 3000), // 重试策略
+};
+
+// 默认TTL（秒）
+const DEFAULT_TTL = parseInt(process.env.REDIS_DEFAULT_TTL || '300');
 
 /**
  * 初始化Redis缓存
- * @returns {Promise<boolean>} 是否成功初始化
+ * @returns {Promise<boolean>} 连接是否成功
  */
 async function initRedisCache() {
   try {
-    const config = getSystemConfig();
-    const cacheConfig = config.cache;
+    logger.info('正在初始化Redis缓存连接...');
     
-    // 从环境变量中获取Redis连接信息
-    const redisUrl = `redis://${process.env.REDIS_PASSWORD ? `:${process.env.REDIS_PASSWORD}@` : ''}${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`;
+    // 创建Redis客户端
+    redisClient = createClient(redisConfig);
     
-    logger.info('正在创建Redis客户端连接...');
-    client = redis.createClient({
-      url: redisUrl
+    // 注册事件监听
+    redisClient.on('error', (err) => {
+      logger.error('Redis连接错误', { error: err.message });
     });
     
-    // 设置事件监听器
-    client.on('error', (error) => {
-      logger.error('Redis连接错误', { error: error.message });
+    redisClient.on('reconnecting', () => {
+      logger.warn('Redis尝试重新连接中...');
     });
     
-    client.on('connect', () => {
-      logger.info('Redis客户端已连接');
+    redisClient.on('ready', () => {
+      logger.info('Redis连接就绪');
     });
     
-    client.on('reconnecting', () => {
-      logger.info('Redis客户端正在重新连接...');
-    });
+    // 连接Redis
+    await redisClient.connect();
     
-    // 连接到Redis服务器
-    await client.connect();
+    // 测试连接
+    await redisClient.ping();
     
-    // 验证Redis连接
-    const isConnected = await validateConnection();
-    if (!isConnected) {
-      logger.error('Redis连接验证失败，请检查配置');
-      return false;
-    }
-    
-    logger.info('Redis缓存初始化成功');
+    logger.info('Redis缓存连接成功');
     return true;
   } catch (error) {
     logger.error('Redis缓存初始化失败', { error: error.message });
@@ -59,126 +63,127 @@ async function initRedisCache() {
 }
 
 /**
- * 验证Redis连接
- * @param {number} retryAttempts - 重试次数
- * @returns {Promise<boolean>} 连接是否成功
+ * 获取Redis客户端实例
+ * @returns {RedisClient} Redis客户端
  */
-async function validateConnection(retryAttempts = 3) {
-  let attempts = 0;
-  
-  while (attempts < retryAttempts) {
-    try {
-      attempts++;
-      logger.info(`正在验证Redis连接 (尝试 ${attempts}/${retryAttempts})...`);
-      
-      // 执行PING命令检查连接
-      const ping = await client.ping();
-      
-      if (ping === 'PONG') {
-        logger.info('Redis连接验证成功');
-        return true;
-      }
-    } catch (error) {
-      const retryDelay = Math.pow(2, attempts) * 1000; // 指数退避策略
-      logger.warn(`Redis连接验证失败 (尝试 ${attempts}/${retryAttempts})，将在 ${retryDelay}ms 后重试`, { 
-        error: error.message 
-      });
-      
-      // 最后一次尝试失败就直接返回失败
-      if (attempts >= retryAttempts) {
-        logger.error('Redis连接验证失败，已达到最大重试次数', { error: error.message });
-        return false;
-      }
-      
-      // 等待一段时间后重试
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
+function getRedisClient() {
+  if (!redisClient) {
+    throw new Error('Redis客户端尚未初始化');
   }
-  
-  return false;
+  return redisClient;
 }
 
 /**
  * 设置缓存
- * @param {string} key - 缓存键
- * @param {string|object} value - 缓存值
- * @param {number} ttl - 过期时间（秒）
- * @returns {Promise<boolean>} 是否设置成功
+ * @param {string} key 缓存键
+ * @param {any} value 缓存值
+ * @param {number} ttl 过期时间(秒)，默认5分钟
+ * @returns {Promise<boolean>} 是否成功
  */
-async function set(key, value, ttl = null) {
+async function set(key, value, ttl = DEFAULT_TTL) {
   try {
-    if (!client) {
-      throw new Error('Redis客户端尚未初始化');
-    }
-    
-    // 如果value是对象，则转为JSON字符串
-    const valueToStore = typeof value === 'object' ? JSON.stringify(value) : value;
-    
-    // 如果设置了ttl，则使用带过期时间的设置
-    if (ttl) {
-      await client.setEx(key, ttl, valueToStore);
-    } else {
-      await client.set(key, valueToStore);
-    }
-    
+    const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    await redisClient.set(key, stringValue, { EX: ttl });
+    logger.debug(`设置缓存: ${key}`, { ttl });
     return true;
   } catch (error) {
-    logger.error('设置缓存失败', { key, error: error.message });
+    logger.error(`设置缓存失败: ${key}`, { error: error.message });
     return false;
   }
 }
 
 /**
  * 获取缓存
- * @param {string} key - 缓存键
- * @param {boolean} parseJson - 是否解析JSON
+ * @param {string} key 缓存键
+ * @param {boolean} parseJson 是否解析JSON
  * @returns {Promise<any>} 缓存值
  */
 async function get(key, parseJson = true) {
   try {
-    if (!client) {
-      throw new Error('Redis客户端尚未初始化');
-    }
+    const value = await redisClient.get(key);
     
-    const value = await client.get(key);
-    
-    if (!value) {
+    if (value === null) {
+      logger.debug(`缓存未命中: ${key}`);
       return null;
     }
     
-    // 如果需要解析JSON，则尝试解析
+    logger.debug(`缓存命中: ${key}`);
+    
     if (parseJson) {
       try {
         return JSON.parse(value);
       } catch (e) {
-        // 如果解析失败，则返回原始值
+        // 如果不是有效的JSON，返回原始值
         return value;
       }
     }
     
     return value;
   } catch (error) {
-    logger.error('获取缓存失败', { key, error: error.message });
+    logger.error(`获取缓存失败: ${key}`, { error: error.message });
     return null;
   }
 }
 
 /**
  * 删除缓存
- * @param {string} key - 缓存键
- * @returns {Promise<boolean>} 是否删除成功
+ * @param {string} key 缓存键
+ * @returns {Promise<boolean>} 是否成功
  */
 async function del(key) {
   try {
-    if (!client) {
-      throw new Error('Redis客户端尚未初始化');
-    }
-    
-    await client.del(key);
+    await redisClient.del(key);
+    logger.debug(`删除缓存: ${key}`);
     return true;
   } catch (error) {
-    logger.error('删除缓存失败', { key, error: error.message });
+    logger.error(`删除缓存失败: ${key}`, { error: error.message });
     return false;
+  }
+}
+
+/**
+ * 批量删除缓存
+ * @param {string} pattern 匹配模式
+ * @returns {Promise<number>} 删除的键数量
+ */
+async function delByPattern(pattern) {
+  try {
+    let cursor = 0;
+    let deleteCount = 0;
+    
+    do {
+      const { cursor: newCursor, keys } = await redisClient.scan(cursor, {
+        MATCH: pattern,
+        COUNT: 100
+      });
+      
+      cursor = newCursor;
+      
+      if (keys.length > 0) {
+        await redisClient.del(keys);
+        deleteCount += keys.length;
+      }
+    } while (cursor !== 0);
+    
+    logger.debug(`批量删除缓存: ${pattern}`, { count: deleteCount });
+    return deleteCount;
+  } catch (error) {
+    logger.error(`批量删除缓存失败: ${pattern}`, { error: error.message });
+    return 0;
+  }
+}
+
+/**
+ * 获取缓存TTL
+ * @param {string} key 缓存键
+ * @returns {Promise<number>} TTL值(秒)，-1表示永不过期，-2表示键不存在
+ */
+async function ttl(key) {
+  try {
+    return await redisClient.ttl(key);
+  } catch (error) {
+    logger.error(`获取缓存TTL失败: ${key}`, { error: error.message });
+    return -2;
   }
 }
 
@@ -187,19 +192,21 @@ async function del(key) {
  * @returns {Promise<void>}
  */
 async function closeCache() {
-  if (client) {
+  if (redisClient) {
     logger.info('正在关闭Redis连接...');
-    await client.quit();
-    client = null;
+    await redisClient.quit();
+    redisClient = null;
     logger.info('Redis连接已关闭');
   }
 }
 
 module.exports = {
   initRedisCache,
-  validateConnection,
+  getRedisClient,
   set,
   get,
   del,
+  delByPattern,
+  ttl,
   closeCache
 }; 

@@ -1,330 +1,222 @@
 /**
- * 大模型服务模块
- * 负责管理不同的大模型接口调用
+ * 大模型服务接口
+ * 提供统一的大模型调用接口，支持多种大模型切换
  */
 
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { OpenAI } = require('openai');
 const axios = require('axios');
 const { createModuleLogger } = require('../utils/logger');
-const { getSystemConfig } = require('../config/config-loader');
 
+// 创建模块日志
 const logger = createModuleLogger('LLMService');
 
-// 存储各提供商的配置
-let llmProviders = {};
-let defaultProvider = '';
+// 大模型提供商
+const LLM_PROVIDERS = {
+  GEMINI: 'gemini',
+  OPENAI: 'openai',
+  SPARK: 'spark',
+  BAIDU: 'baidu',
+  VOLCANO: 'volcano',
+  KIMI: 'kimi'
+};
+
+// 默认大模型
+const DEFAULT_PROVIDER = process.env.DEFAULT_LLM_PROVIDER || LLM_PROVIDERS.GEMINI;
+
+// 存储API实例
+const apiInstances = {};
+let isInitialized = false;
+let availableProviders = [];
 
 /**
  * 初始化大模型服务
- * @returns {Promise<boolean>} 是否成功初始化
+ * @returns {Promise<boolean>} 初始化结果
  */
 async function initLLMService() {
   try {
-    const config = getSystemConfig();
-    const llmConfig = config.llm;
-
-    // 设置默认提供商
-    defaultProvider = process.env.LLM_DEFAULT_PROVIDER || llmConfig.defaultProvider || 'gemini';
-
-    // 初始化各提供商的配置
-    llmProviders = {
-      gemini: {
-        enabled: llmConfig.gemini.enabled,
-        apiKey: process.env.GEMINI_API_KEY || llmConfig.gemini.apiKey,
-        model: process.env.GEMINI_MODEL || llmConfig.gemini.model,
-        endpoint: llmConfig.gemini.endpoint,
-        temperature: llmConfig.gemini.temperature,
-        maxTokens: llmConfig.gemini.maxTokens,
-        timeout: llmConfig.gemini.timeout,
-      },
-      openai: {
-        enabled: llmConfig.openai.enabled,
-        apiKey: process.env.OPENAI_API_KEY || llmConfig.openai.apiKey,
-        model: process.env.OPENAI_MODEL || llmConfig.openai.model,
-        endpoint: llmConfig.openai.endpoint,
-        temperature: llmConfig.openai.temperature,
-        maxTokens: llmConfig.openai.maxTokens,
-        timeout: llmConfig.openai.timeout,
-      },
-      spark: {
-        enabled: llmConfig.spark.enabled,
-        apiKey: process.env.SPARK_API_KEY || llmConfig.spark.apiKey,
-        apiSecret: process.env.SPARK_API_SECRET || llmConfig.spark.apiSecret,
-        appId: process.env.SPARK_APP_ID || llmConfig.spark.appId,
-        model: process.env.SPARK_MODEL || llmConfig.spark.model,
-        endpoint: llmConfig.spark.endpoint,
-        temperature: llmConfig.spark.temperature,
-        maxTokens: llmConfig.spark.maxTokens,
-        timeout: llmConfig.spark.timeout,
-      },
-      baidu: {
-        enabled: llmConfig.baidu.enabled,
-        apiKey: process.env.BAIDU_API_KEY || llmConfig.baidu.apiKey,
-        secretKey: process.env.BAIDU_SECRET_KEY || llmConfig.baidu.secretKey,
-        model: process.env.BAIDU_MODEL || llmConfig.baidu.model,
-        endpoint: llmConfig.baidu.endpoint,
-        temperature: llmConfig.baidu.temperature,
-        maxTokens: llmConfig.baidu.maxTokens,
-        timeout: llmConfig.baidu.timeout,
-      },
-      volcengine: {
-        enabled: llmConfig.volcengine.enabled,
-        accessKey: process.env.VOLCENGINE_ACCESS_KEY || llmConfig.volcengine.accessKey,
-        secretKey: process.env.VOLCENGINE_SECRET_KEY || llmConfig.volcengine.secretKey,
-        model: process.env.VOLCENGINE_MODEL || llmConfig.volcengine.model,
-        endpoint: llmConfig.volcengine.endpoint,
-        temperature: llmConfig.volcengine.temperature,
-        maxTokens: llmConfig.volcengine.maxTokens,
-        timeout: llmConfig.volcengine.timeout,
-      },
-      kimi: {
-        enabled: llmConfig.kimi.enabled,
-        apiKey: process.env.KIMI_API_KEY || llmConfig.kimi.apiKey,
-        model: process.env.KIMI_MODEL || llmConfig.kimi.model,
-        endpoint: llmConfig.kimi.endpoint,
-        temperature: llmConfig.kimi.temperature,
-        maxTokens: llmConfig.kimi.maxTokens,
-        timeout: llmConfig.kimi.timeout,
-      },
-    };
-
-    // 验证默认提供商
-    const provider = llmProviders[defaultProvider];
-    if (!provider || !provider.enabled) {
-      const availableProviders = Object.keys(llmProviders).filter(
-        (key) => llmProviders[key].enabled
-      );
-
-      if (availableProviders.length > 0) {
-        defaultProvider = availableProviders[0];
-        logger.warn(
-          `默认大模型提供商 ${defaultProvider} 不可用，已切换到 ${availableProviders[0]}`
-        );
-      } else {
-        logger.error('没有可用的大模型提供商，请检查配置');
-        return false;
+    logger.info('正在初始化大模型服务...');
+    
+    // 初始化Gemini
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        apiInstances[LLM_PROVIDERS.GEMINI] = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        availableProviders.push(LLM_PROVIDERS.GEMINI);
+        logger.info('Google Gemini 大模型初始化成功');
+      } catch (error) {
+        logger.error('Google Gemini 大模型初始化失败', { error: error.message });
       }
+    } else {
+      logger.warn('未配置GEMINI_API_KEY，Gemini大模型将不可用');
     }
-
-    logger.info(`大模型服务初始化成功，默认提供商: ${defaultProvider}`);
+    
+    // 初始化OpenAI
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        apiInstances[LLM_PROVIDERS.OPENAI] = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY
+        });
+        availableProviders.push(LLM_PROVIDERS.OPENAI);
+        logger.info('OpenAI 大模型初始化成功');
+      } catch (error) {
+        logger.error('OpenAI 大模型初始化失败', { error: error.message });
+      }
+    } else {
+      logger.warn('未配置OPENAI_API_KEY，OpenAI大模型将不可用');
+    }
+    
+    // 初始化讯飞星火
+    if (process.env.SPARK_APP_ID && process.env.SPARK_API_KEY && process.env.SPARK_API_SECRET) {
+      try {
+        // 星火API初始化逻辑
+        apiInstances[LLM_PROVIDERS.SPARK] = {
+          appId: process.env.SPARK_APP_ID,
+          apiKey: process.env.SPARK_API_KEY,
+          apiSecret: process.env.SPARK_API_SECRET
+        };
+        availableProviders.push(LLM_PROVIDERS.SPARK);
+        logger.info('讯飞星火大模型初始化成功');
+      } catch (error) {
+        logger.error('讯飞星火大模型初始化失败', { error: error.message });
+      }
+    } else {
+      logger.warn('未配置讯飞星火相关密钥，星火大模型将不可用');
+    }
+    
+    // 初始化百度文心一言
+    if (process.env.BAIDU_API_KEY && process.env.BAIDU_SECRET_KEY) {
+      try {
+        // 文心一言API初始化逻辑
+        apiInstances[LLM_PROVIDERS.BAIDU] = {
+          apiKey: process.env.BAIDU_API_KEY,
+          secretKey: process.env.BAIDU_SECRET_KEY
+        };
+        availableProviders.push(LLM_PROVIDERS.BAIDU);
+        logger.info('百度文心一言大模型初始化成功');
+      } catch (error) {
+        logger.error('百度文心一言大模型初始化失败', { error: error.message });
+      }
+    } else {
+      logger.warn('未配置百度文心一言相关密钥，文心一言大模型将不可用');
+    }
+    
+    // 初始化字节火山引擎
+    if (process.env.VOLCANO_API_KEY) {
+      try {
+        // 火山引擎API初始化逻辑
+        apiInstances[LLM_PROVIDERS.VOLCANO] = {
+          apiKey: process.env.VOLCANO_API_KEY
+        };
+        availableProviders.push(LLM_PROVIDERS.VOLCANO);
+        logger.info('字节火山引擎大模型初始化成功');
+      } catch (error) {
+        logger.error('字节火山引擎大模型初始化失败', { error: error.message });
+      }
+    } else {
+      logger.warn('未配置字节火山引擎相关密钥，火山引擎大模型将不可用');
+    }
+    
+    // 初始化Kimi
+    if (process.env.KIMI_API_KEY) {
+      try {
+        // Kimi API初始化逻辑
+        apiInstances[LLM_PROVIDERS.KIMI] = {
+          apiKey: process.env.KIMI_API_KEY
+        };
+        availableProviders.push(LLM_PROVIDERS.KIMI);
+        logger.info('Kimi大模型初始化成功');
+      } catch (error) {
+        logger.error('Kimi大模型初始化失败', { error: error.message });
+      }
+    } else {
+      logger.warn('未配置Kimi相关密钥，Kimi大模型将不可用');
+    }
+    
+    if (availableProviders.length === 0) {
+      logger.error('没有可用的大模型服务，请至少配置一个大模型API密钥');
+      return false;
+    }
+    
+    isInitialized = true;
+    logger.info(`大模型服务初始化完成，共有${availableProviders.length}个可用模型`);
     return true;
   } catch (error) {
-    logger.error('大模型服务初始化失败', { error: error.message });
+    logger.error('大模型服务初始化过程中发生错误', { error: error.message, stack: error.stack });
     return false;
   }
 }
 
 /**
- * 获取大模型回复
- * @param {string} prompt - 提示语
- * @param {string} provider - 提供商名称
- * @returns {Promise<string>} 大模型回复
+ * 获取默认的大模型提供商
+ * @returns {string} 默认提供商名称
  */
-async function getLLMResponse(prompt, provider = null) {
-  try {
-    // 使用指定的提供商或默认提供商
-    const providerName = provider && llmProviders[provider]?.enabled ? provider : defaultProvider;
-    const providerConfig = llmProviders[providerName];
-
-    if (!providerConfig || !providerConfig.enabled) {
-      throw new Error(`大模型提供商 ${providerName} 不可用`);
-    }
-
-    // 根据不同提供商调用不同的处理函数
-    switch (providerName) {
-      case 'gemini':
-        return await callGemini(prompt, providerConfig);
-      case 'openai':
-        return await callOpenAI(prompt, providerConfig);
-      case 'spark':
-        return await callSpark(prompt, providerConfig);
-      case 'baidu':
-        return await callBaidu(prompt, providerConfig);
-      case 'volcengine':
-        return await callVolcengine(prompt, providerConfig);
-      case 'kimi':
-        return await callKimi(prompt, providerConfig);
-      default:
-        throw new Error(`未支持的大模型提供商: ${providerName}`);
-    }
-  } catch (error) {
-    logger.error('获取大模型回复失败', { error: error.message });
-    throw error;
+function getDefaultProvider() {
+  if (availableProviders.includes(DEFAULT_PROVIDER)) {
+    return DEFAULT_PROVIDER;
+  } else if (availableProviders.length > 0) {
+    return availableProviders[0];
   }
-}
-
-/**
- * 调用Google Gemini API
- * @param {string} prompt - 提示语
- * @param {object} config - 配置
- * @returns {Promise<string>} 回复内容
- */
-async function callGemini(prompt, config) {
-  try {
-    if (!config.apiKey) {
-      throw new Error('Gemini API密钥未配置');
-    }
-
-    const url = `${config.endpoint}${config.model}:generateContent?key=${config.apiKey}`;
-
-    const response = await axios.post(
-      url,
-      {
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: config.temperature,
-          maxOutputTokens: config.maxTokens,
-        },
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout: config.timeout,
-      }
-    );
-
-    // 解析响应
-    if (response.data.candidates && response.data.candidates.length > 0) {
-      const content = response.data.candidates[0].content;
-      if (content && content.parts && content.parts.length > 0) {
-        return content.parts[0].text;
-      }
-    }
-
-    throw new Error('未能从Gemini响应中提取有效内容');
-  } catch (error) {
-    logger.error('调用Gemini API失败', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * 调用OpenAI API
- * @param {string} prompt - 提示语
- * @param {object} config - 配置
- * @returns {Promise<string>} 回复内容
- */
-async function callOpenAI(prompt, config) {
-  try {
-    if (!config.apiKey) {
-      throw new Error('OpenAI API密钥未配置');
-    }
-
-    const url = `${config.endpoint}/chat/completions`;
-
-    const response = await axios.post(
-      url,
-      {
-        model: config.model,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: config.temperature,
-        max_tokens: config.maxTokens,
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
-        },
-        timeout: config.timeout,
-      }
-    );
-
-    // 解析响应
-    if (response.data.choices && response.data.choices.length > 0) {
-      return response.data.choices[0].message.content;
-    }
-
-    throw new Error('未能从OpenAI响应中提取有效内容');
-  } catch (error) {
-    logger.error('调用OpenAI API失败', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * 调用讯飞星火API
- * @param {string} prompt - 提示语
- * @param {object} config - 配置
- * @returns {Promise<string>} 回复内容
- */
-async function callSpark(prompt, config) {
-  logger.info('调用讯飞星火API');
-  // 这里需要实现讯飞星火API的调用，因其需要WebSocket连接和特殊的鉴权方式
-  // 仅作为示例，实际实现需要更复杂的处理
-  return '讯飞星火API调用示例（需要实现）';
-}
-
-/**
- * 调用百度文心一言API
- * @param {string} prompt - 提示语
- * @param {object} config - 配置
- * @returns {Promise<string>} 回复内容
- */
-async function callBaidu(prompt, config) {
-  logger.info('调用百度文心一言API');
-  // 这里需要实现百度文心一言API的调用，包括获取access_token等
-  // 仅作为示例，实际实现需要更复杂的处理
-  return '百度文心一言API调用示例（需要实现）';
-}
-
-/**
- * 调用字节火山引擎API
- * @param {string} prompt - 提示语
- * @param {object} config - 配置
- * @returns {Promise<string>} 回复内容
- */
-async function callVolcengine(prompt, config) {
-  logger.info('调用字节火山引擎API');
-  // 这里需要实现字节火山引擎API的调用
-  // 仅作为示例，实际实现需要更复杂的处理
-  return '字节火山引擎API调用示例（需要实现）';
-}
-
-/**
- * 调用Kimi API
- * @param {string} prompt - 提示语
- * @param {object} config - 配置
- * @returns {Promise<string>} 回复内容
- */
-async function callKimi(prompt, config) {
-  logger.info('调用Kimi API');
-  // 这里需要实现Kimi API的调用
-  // 仅作为示例，实际实现需要更复杂的处理
-  return 'Kimi API调用示例（需要实现）';
+  return null;
 }
 
 /**
  * 获取所有可用的大模型提供商
- * @returns {Array<string>} 提供商列表
+ * @returns {string[]} 可用提供商列表
  */
 function getAvailableProviders() {
-  return Object.keys(llmProviders).filter((key) => llmProviders[key].enabled);
+  return [...availableProviders];
 }
 
 /**
- * 获取当前默认提供商
- * @returns {string} 默认提供商名称
+ * 向大模型发送查询并获取回答
+ * @param {string} prompt 提示内容
+ * @param {object} options 选项
+ * @param {string} options.provider 指定大模型提供商
+ * @returns {Promise<string>} 大模型回答
  */
-function getDefaultProvider() {
-  return defaultProvider;
+async function query(prompt, options = {}) {
+  if (!isInitialized) {
+    throw new Error('大模型服务尚未初始化');
+  }
+  
+  const provider = options.provider || getDefaultProvider();
+  
+  if (!provider || !availableProviders.includes(provider)) {
+    throw new Error(`指定的大模型提供商 ${provider} 不可用`);
+  }
+  
+  const apiInstance = apiInstances[provider];
+  logger.debug(`使用 ${provider} 进行查询`, { promptLength: prompt.length });
+  
+  try {
+    switch (provider) {
+      case LLM_PROVIDERS.GEMINI:
+        const model = apiInstance.getGenerativeModel({ model: "gemini-pro" });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      
+      case LLM_PROVIDERS.OPENAI:
+        const chatCompletion = await apiInstance.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [{ role: "user", content: prompt }],
+        });
+        return chatCompletion.choices[0].message.content;
+      
+      // 其他大模型实现...
+      default:
+        throw new Error(`尚未实现的大模型提供商: ${provider}`);
+    }
+  } catch (error) {
+    logger.error(`使用 ${provider} 查询失败`, { error: error.message });
+    throw new Error(`大模型查询失败: ${error.message}`);
+  }
 }
 
 module.exports = {
+  LLM_PROVIDERS,
   initLLMService,
-  getLLMResponse,
-  getAvailableProviders,
+  query,
   getDefaultProvider,
+  getAvailableProviders
 };
