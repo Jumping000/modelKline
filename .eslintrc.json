@@ -18,5 +18,12 @@
     "semi": ["error", "always"],
     "no-unused-vars": ["warn"],
     "no-console": ["off"]
+  },
+  "prettier": {
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 120,
+    "tabWidth": 2,
+    "useTabs": false
   }
 } 
