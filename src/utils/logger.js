@@ -7,10 +7,17 @@ const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const moment = require('moment-timezone');
 const path = require('path');
-const { getSystemConfig } = require('../config/config-loader');
 
-// 获取系统配置
-const config = getSystemConfig();
+// 默认配置
+const defaultConfig = {
+  system: {
+    name: 'OKX量化交易系统',
+    logLevel: 'info',
+    maxLogFileSize: '10m',
+    maxLogFiles: 10,
+    timeZone: 'Asia/Shanghai'
+  }
+};
 
 // 创建日志目录
 const logDir = path.join(process.cwd(), 'logs');
@@ -18,7 +25,7 @@ const logDir = path.join(process.cwd(), 'logs');
 // 定义日志格式
 const logFormat = winston.format.combine(
   winston.format.timestamp({
-    format: () => moment().tz(config.system.timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
+    format: () => moment().tz(defaultConfig.system.timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
   }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
@@ -29,7 +36,7 @@ const logFormat = winston.format.combine(
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({
-    format: () => moment().tz(config.system.timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
+    format: () => moment().tz(defaultConfig.system.timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
   }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let metaStr = '';
@@ -42,9 +49,9 @@ const consoleFormat = winston.format.combine(
 
 // 创建日志记录器
 const logger = winston.createLogger({
-  level: config.system.logLevel || 'info',
+  level: defaultConfig.system.logLevel,
   format: logFormat,
-  defaultMeta: { service: config.system.name },
+  defaultMeta: { service: defaultConfig.system.name },
   transports: [
     // 控制台输出
     new winston.transports.Console({
@@ -54,16 +61,16 @@ const logger = winston.createLogger({
     new DailyRotateFile({
       filename: path.join(logDir, 'combined-%DATE%.log'),
       datePattern: 'YYYY-MM-DD',
-      maxSize: config.system.maxLogFileSize || '10m',
-      maxFiles: config.system.maxLogFiles || '14d',
+      maxSize: defaultConfig.system.maxLogFileSize,
+      maxFiles: defaultConfig.system.maxLogFiles,
       format: logFormat
     }),
     // 文件输出 - 错误日志
     new DailyRotateFile({
       filename: path.join(logDir, 'error-%DATE%.log'),
       datePattern: 'YYYY-MM-DD',
-      maxSize: config.system.maxLogFileSize || '10m',
-      maxFiles: config.system.maxLogFiles || '14d',
+      maxSize: defaultConfig.system.maxLogFileSize,
+      maxFiles: defaultConfig.system.maxLogFiles,
       level: 'error',
       format: logFormat
     })
@@ -79,7 +86,8 @@ function createModuleLogger(moduleName) {
   return logger.child({ module: moduleName });
 }
 
+// 导出日志工具
 module.exports = {
   logger,
-  createModuleLogger,
+  createModuleLogger
 }; 

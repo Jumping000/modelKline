@@ -5,10 +5,42 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createModuleLogger } = require('../utils/logger');
+const Joi = require('joi');
 
-const logger = createModuleLogger('ConfigLoader');
-const CONFIG_DIR = path.resolve(__dirname, '../../config');
+// 配置验证模式
+const configSchema = Joi.object({
+  system: Joi.object({
+    name: Joi.string().required(),
+    version: Joi.string().required(),
+    logLevel: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
+    maxLogFileSize: Joi.string().default('10m'),
+    maxLogFiles: Joi.number().default(10),
+    timeZone: Joi.string().default('Asia/Shanghai')
+  }).required(),
+  market: Joi.object({
+    defaultSymbol: Joi.string().required(),
+    supportedSymbols: Joi.array().items(Joi.string()).required(),
+    defaultKlineInterval: Joi.string().required(),
+    supportedIntervals: Joi.array().items(Joi.string()).required()
+  }).required(),
+  agents: Joi.object().required(),
+  trading: Joi.object({
+    riskManagement: Joi.object().required(),
+    executionSettings: Joi.object().required()
+  }).required(),
+  database: Joi.object({
+    connectionPoolSize: Joi.number().default(10),
+    connectionTimeout: Joi.number().default(30000),
+    queryTimeout: Joi.number().default(5000)
+  }).required(),
+  cache: Joi.object({
+    ttlSeconds: Joi.number().default(300),
+    maxCacheSize: Joi.string().default('1gb'),
+    preloadMarketData: Joi.boolean().default(true)
+  }).required()
+});
+
+let systemConfig = null;
 
 /**
  * 加载配置文件
@@ -18,37 +50,44 @@ const CONFIG_DIR = path.resolve(__dirname, '../../config');
  */
 function loadConfig(configName, required = true) {
   // 首先尝试加载 .js 配置文件
-  const jsConfigPath = path.join(CONFIG_DIR, `${configName}.js`);
+  const jsConfigPath = path.join(process.cwd(), 'config', `${configName}.js`);
   if (fs.existsSync(jsConfigPath)) {
     try {
-      logger.info(`正在加载JavaScript配置文件: ${configName}.js`);
       // 清除缓存以确保获取最新的配置
       delete require.cache[require.resolve(jsConfigPath)];
       return require(jsConfigPath);
     } catch (error) {
-      logger.error(`加载JavaScript配置文件 ${configName}.js 失败`, { error: error.message });
+      console.error(`加载JavaScript配置文件 ${configName}.js 失败: ${error.message}`);
       throw new Error(`加载JavaScript配置文件 ${configName}.js 失败: ${error.message}`);
     }
   }
   
   // 如果没有找到 .js 文件，尝试加载 .json 文件
-  const jsonConfigPath = path.join(CONFIG_DIR, `${configName}.json`);
+  const jsonConfigPath = path.join(process.cwd(), 'config', `${configName}.json`);
   
   try {
     if (!fs.existsSync(jsonConfigPath)) {
       if (required) {
         throw new Error(`必需的配置文件 ${configName}.json 不存在`);
       }
-      logger.warn(`配置文件 ${configName}.json 不存在，将使用默认配置`);
+      console.warn(`配置文件 ${configName}.json 不存在，将使用默认配置`);
       return {};
     }
     
-    logger.info(`正在加载JSON配置文件: ${configName}.json`);
     const configContent = fs.readFileSync(jsonConfigPath, 'utf8');
-    return JSON.parse(configContent);
+    const configData = JSON.parse(configContent);
+    
+    // 验证配置
+    const { error, value } = configSchema.validate(configData);
+    if (error) {
+      console.error('配置验证失败:', error.details);
+      process.exit(1);
+    }
+    
+    return value;
   } catch (error) {
     if (error instanceof SyntaxError) {
-      logger.error(`配置文件 ${configName}.json 格式错误`, { error: error.message });
+      console.error(`配置文件 ${configName}.json 格式错误`, { error: error.message });
       throw new Error(`配置文件 ${configName}.json 格式错误: ${error.message}`);
     }
     throw error;
@@ -56,40 +95,13 @@ function loadConfig(configName, required = true) {
 }
 
 /**
- * 验证配置项
- * @param {object} config - 配置对象
- * @param {object} schema - 配置模式
- * @returns {boolean} - 验证结果
- */
-function validateConfig(config, schema) {
-  // 基本验证实现，未来可以扩展为更复杂的模式验证
-  for (const [key, specification] of Object.entries(schema)) {
-    if (specification.required && (config[key] === undefined || config[key] === null)) {
-      logger.error(`配置缺少必需项: ${key}`);
-      return false;
-    }
-    
-    if (config[key] !== undefined && specification.type && 
-        typeof config[key] !== specification.type) {
-      logger.error(`配置项 ${key} 类型错误, 期望 ${specification.type} 但得到 ${typeof config[key]}`);
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
  * 获取系统配置
  * @returns {object} - 系统配置对象
  */
 function getSystemConfig() {
-  const systemConfig = loadConfig('system-config');
-  
-  // 合并环境变量中的配置覆盖
-  if (process.env.LOG_LEVEL) {
-    systemConfig.system.logLevel = process.env.LOG_LEVEL;
+  if (!systemConfig) {
+    return loadConfig('system-config');
   }
-  
   return systemConfig;
 }
 
@@ -108,19 +120,19 @@ function getAgentConfig(customConfigPath) {
           // 清除缓存以确保获取最新的配置
           delete require.cache[require.resolve(absolutePath)];
           const customConfig = require(absolutePath);
-          logger.info(`已加载自定义JavaScript智能体配置: ${customConfigPath}`);
+          console.info(`已加载自定义JavaScript智能体配置: ${customConfigPath}`);
           return customConfig;
         } else {
           // 处理JSON文件
           const customConfig = JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
-          logger.info(`已加载自定义JSON智能体配置: ${customConfigPath}`);
+          console.info(`已加载自定义JSON智能体配置: ${customConfigPath}`);
           return customConfig;
         }
       } catch (error) {
-        logger.error(`加载自定义配置失败: ${error.message}`);
+        console.error(`加载自定义配置失败: ${error.message}`);
       }
     } else {
-      logger.error(`自定义配置文件不存在: ${customConfigPath}`);
+      console.error(`自定义配置文件不存在: ${customConfigPath}`);
     }
   }
   
@@ -129,9 +141,15 @@ function getAgentConfig(customConfigPath) {
   return systemConfig.agents || {};
 }
 
+// 重新加载配置
+function reloadConfig() {
+  systemConfig = null;
+  return loadConfig('system-config');
+}
+
 module.exports = {
   loadConfig,
-  validateConfig,
   getSystemConfig,
   getAgentConfig,
+  reloadConfig
 }; 
