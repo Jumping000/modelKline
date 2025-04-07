@@ -1,0 +1,44 @@
+{
+  "name": "okx-quantitative-trading-system",
+  "version": "0.1.0",
+  "description": "OKX量化交易系统 - 大模型多智能体架构",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "backtest": "node src/backtest.js",
+    "start:custom": "node src/index.js --config=",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "okx",
+    "trading",
+    "quantitative",
+    "ai",
+    "llm",
+    "multi-agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "redis": "^4.6.12",
+    "ws": "^8.16.0",
+    "mysql2": "^3.6.5",
+    "tensorflow.js": "^4.14.0",
+    "ml5": "^0.12.2",
+    "d3": "^7.8.5",
+    "chart.js": "^4.4.1",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3"
+  }
+} 
