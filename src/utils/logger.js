@@ -22,8 +22,8 @@ const defaultConfig = {
 // 创建日志目录
 const logDir = path.join(process.cwd(), 'logs');
 
-// 定义日志格式
-const logFormat = winston.format.combine(
+// 文件日志格式 - 详细格式
+const fileLogFormat = winston.format.combine(
   winston.format.timestamp({
     format: () => moment().tz(defaultConfig.system.timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
   }),
@@ -32,30 +32,28 @@ const logFormat = winston.format.combine(
   winston.format.json()
 );
 
-// 创建控制台输出格式
-const consoleFormat = winston.format.combine(
+// 控制台日志格式 - 简洁格式
+const consoleLogFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({
-    format: () => moment().tz(defaultConfig.system.timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
+    format: () => moment().tz(defaultConfig.system.timeZone).format('HH:mm:ss')
   }),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let metaStr = '';
-    if (Object.keys(meta).length > 0) {
-      metaStr = JSON.stringify(meta, null, 2);
-    }
-    return `${timestamp} [${level}]: ${message} ${metaStr}`;
+  winston.format.printf(({ timestamp, level, message, module }) => {
+    const moduleStr = module ? `[${module}]` : '';
+    return `${timestamp} ${level} ${moduleStr}: ${message}`;
   })
 );
 
 // 创建日志记录器
 const logger = winston.createLogger({
   level: defaultConfig.system.logLevel,
-  format: logFormat,
+  format: fileLogFormat,
   defaultMeta: { service: defaultConfig.system.name },
   transports: [
-    // 控制台输出
+    // 控制台输出 - 只输出info及以上级别
     new winston.transports.Console({
-      format: consoleFormat
+      level: 'info',
+      format: consoleLogFormat
     }),
     // 文件输出 - 所有日志
     new DailyRotateFile({
@@ -63,7 +61,7 @@ const logger = winston.createLogger({
       datePattern: 'YYYY-MM-DD',
       maxSize: defaultConfig.system.maxLogFileSize,
       maxFiles: defaultConfig.system.maxLogFiles,
-      format: logFormat
+      format: fileLogFormat
     }),
     // 文件输出 - 错误日志
     new DailyRotateFile({
@@ -72,7 +70,16 @@ const logger = winston.createLogger({
       maxSize: defaultConfig.system.maxLogFileSize,
       maxFiles: defaultConfig.system.maxLogFiles,
       level: 'error',
-      format: logFormat
+      format: fileLogFormat
+    }),
+    // 文件输出 - 调试日志
+    new DailyRotateFile({
+      filename: path.join(logDir, 'debug-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      maxSize: defaultConfig.system.maxLogFileSize,
+      maxFiles: defaultConfig.system.maxLogFiles,
+      level: 'debug',
+      format: fileLogFormat
     })
   ]
 });
