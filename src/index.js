@@ -13,6 +13,7 @@ const { initRedisCache, closeCache } = require('./data/cache');
 const { initLLMService, getDefaultProvider, getAvailableProviders } = require('./services/llm-service');
 const { createModuleLogger } = require('./utils/logger');
 
+// 创建主日志记录器
 const logger = createModuleLogger('App');
 
 // 记录系统启动
@@ -22,22 +23,16 @@ logger.info('OKX量化交易系统启动中...');
 // const { initAgents } = require('./agents');
 // const { initApi } = require('./api');
 
-// 临时的启动代码
-const startSystem = async () => {
+// 系统启动函数
+async function startSystem() {
   try {
-    logger.info('正在初始化环境...');
+    logger.info('系统启动中...');
     
-    // 加载配置
-    logger.info('正在加载配置...');
-    const config = getSystemConfig();
-    logger.info(`系统名称: ${config.system.name}`);
-    logger.info(`使用默认交易对: ${config.market.defaultSymbol}`);
-    
-    // 初始化数据库连接并验证
+    // 初始化数据库
     logger.info('正在初始化数据库...');
     const dbInitialized = await initDatabase();
     if (!dbInitialized) {
-      logger.error('数据库初始化失败，系统无法启动');
+      logger.error('数据库初始化失败');
       process.exit(1);
     }
     
@@ -45,54 +40,61 @@ const startSystem = async () => {
     logger.info('正在初始化Redis缓存...');
     const cacheInitialized = await initRedisCache();
     if (!cacheInitialized) {
-      logger.warn('Redis缓存初始化失败，系统将在无缓存模式下运行');
+      logger.error('Redis缓存初始化失败');
+      process.exit(1);
     }
     
     // 初始化大模型服务
     logger.info('正在初始化大模型服务...');
     const llmInitialized = await initLLMService();
-    if (llmInitialized) {
-      const defaultProvider = getDefaultProvider();
-      const availableProviders = getAvailableProviders();
-      logger.info(`大模型服务初始化成功，默认使用: ${defaultProvider}`);
-      logger.info(`可用的大模型: ${availableProviders.join(', ')}`);
-    } else {
-      logger.warn('大模型服务初始化失败，部分功能可能不可用');
+    if (!llmInitialized) {
+      logger.error('大模型服务初始化失败');
+      process.exit(1);
     }
     
-    logger.info('正在启动智能体...');
-    // await initAgents(config.agents);
+    // 获取可用的大模型提供商
+    const availableProviders = getAvailableProviders();
+    const defaultProvider = getDefaultProvider();
+    logger.info(`可用的大模型提供商: ${availableProviders.join(', ')}`);
+    logger.info(`默认使用的大模型: ${defaultProvider}`);
     
-    logger.info('正在启动API服务...');
-    // await initApi();
-    
-    logger.info('系统初始化完成，运行中...');
+    logger.info('系统启动完成');
   } catch (error) {
-    logger.error('系统启动失败:', { error: error.message, stack: error.stack });
+    logger.error('系统启动失败', { error: error.message, stack: error.stack });
     process.exit(1);
   }
-};
+}
 
-// 启动系统
-startSystem();
+// 优雅关闭
+async function gracefulShutdown() {
+  try {
+    logger.info('系统正在关闭...');
+    
+    // 关闭数据库连接
+    await closeDatabase();
+    logger.info('数据库连接已关闭');
+    
+    // 关闭Redis连接
+    await closeCache();
+    logger.info('Redis连接已关闭');
+    
+    logger.info('系统已安全关闭');
+    process.exit(0);
+  } catch (error) {
+    logger.error('系统关闭失败', { error: error.message, stack: error.stack });
+    process.exit(1);
+  }
+}
 
 // 处理进程终止信号
-process.on('SIGINT', async () => {
-  logger.info('接收到终止信号，系统正在优雅关闭...');
-  
-  // 关闭数据库连接
-  await closeDatabase();
-  
-  // 关闭Redis连接
-  await closeCache();
-  
-  logger.info('系统已安全关闭');
-  process.exit(0);
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+// 处理未捕获的异常
+process.on('uncaughtException', (error) => {
+  logger.error('未捕获的异常', { error: error.message, stack: error.stack });
+  gracefulShutdown();
 });
 
-// 未捕获的异常处理
-process.on('uncaughtException', (error) => {
-  logger.error('未捕获的异常:', { error: error.message, stack: error.stack });
-  
-  // 在生产环境中，可以添加错误报告代码，如发送告警邮件、短信通知等
-}); 
+// 启动系统
+startSystem(); 
