@@ -1,0 +1,183 @@
+{
+  "system": {
+    "name": "OKX量化交易系统",
+    "version": "1.0.0",
+    "description": "基于大模型的多智能体量化交易系统"
+  },
+  "agents": {
+    "kline_agents": {
+      "k_line_pattern": {
+        "enabled": true,
+        "description": "K线形态识别智能体",
+        "weight": 0.8,
+        "parameters": {
+          "patterns": ["hammer", "shooting_star", "doji", "engulfing", "harami"],
+          "confirmation_bars": 2,
+          "sensitivity": 0.75
+        }
+      },
+      "candle_formation": {
+        "enabled": true,
+        "description": "蜡烛图模式智能体",
+        "weight": 0.7,
+        "parameters": {
+          "patterns": ["head_shoulders", "double_top", "double_bottom", "triangle", "flag"],
+          "min_pattern_bars": 5,
+          "significance_threshold": 0.65
+        }
+      },
+      "cyclic_analysis": {
+        "enabled": true,
+        "description": "周期性分析智能体",
+        "weight": 0.6,
+        "parameters": {
+          "cycle_lengths": [5, 10, 20, 60],
+          "fourier_components": 3,
+          "prediction_bars": 5
+        }
+      },
+      "breakout_detection": {
+        "enabled": true,
+        "description": "突破判断智能体",
+        "weight": 0.85,
+        "parameters": {
+          "support_resistance_periods": 20,
+          "breakout_threshold": 0.02,
+          "volume_confirmation": true
+        }
+      },
+      "volume_analysis": {
+        "enabled": true,
+        "description": "成交量分析智能体",
+        "weight": 0.65,
+        "parameters": {
+          "volume_ma_periods": [5, 10, 20],
+          "volume_spike_threshold": 2.5,
+          "price_volume_correlation": true
+        }
+      },
+      "volatility_analysis": {
+        "enabled": false,
+        "description": "波动率分析智能体",
+        "weight": 0.6,
+        "parameters": {
+          "volatility_measures": ["bollinger_bands", "atr", "standard_deviation"],
+          "lookback_periods": 14,
+          "volatility_threshold": 0.03
+        }
+      },
+      "multi_timeframe": {
+        "enabled": true,
+        "description": "多周期协同智能体",
+        "weight": 0.75,
+        "parameters": {
+          "timeframes": ["1m", "5m", "15m", "1h", "4h", "1d"],
+          "alignment_method": "weighted",
+          "higher_tf_weight": 1.5
+        }
+      },
+      "price_action": {
+        "enabled": true,
+        "description": "价格行为智能体",
+        "weight": 0.8,
+        "parameters": {
+          "pivot_points": true,
+          "swing_detection": true,
+          "trend_structure_analysis": true,
+          "orderblock_detection": true
+        }
+      }
+    },
+    "market_agents": {
+      "real_time_market": {
+        "enabled": true,
+        "description": "实时行情智能体",
+        "weight": 0.9,
+        "parameters": {
+          "update_frequency_ms": 1000,
+          "depth_levels": 10,
+          "microstructure_features": ["spread", "imbalance", "pressure"]
+        }
+      },
+      "cross_market_arbitrage": {
+        "enabled": false,
+        "description": "跨市场套利智能体",
+        "weight": 0.5,
+        "parameters": {
+          "exchanges": ["okx", "binance", "huobi"],
+          "min_spread_percent": 0.2,
+          "execution_time_ms": 500
+        }
+      },
+      "sentiment_analysis": {
+        "enabled": true,
+        "description": "情绪分析智能体",
+        "weight": 0.6,
+        "parameters": {
+          "data_sources": ["twitter", "reddit", "news"],
+          "sentiment_update_minutes": 15,
+          "trending_keywords": ["btc", "eth", "crypto", "bitcoin"]
+        }
+      },
+      "trend_capture": {
+        "enabled": true,
+        "description": "趋势捕捉智能体",
+        "weight": 0.8,
+        "parameters": {
+          "trend_indicators": ["ema", "macd", "adx"],
+          "confirmation_period": 3,
+          "trend_strength_threshold": 25
+        }
+      },
+      "volatility_trading": {
+        "enabled": true,
+        "description": "波动套利智能体",
+        "weight": 0.7,
+        "parameters": {
+          "mean_reversion": true,
+          "bollinger_band_settings": [20, 2],
+          "position_sizing_volatility": true
+        }
+      },
+      "liquidity_analysis": {
+        "enabled": true,
+        "description": "流动性分析智能体",
+        "weight": 0.65,
+        "parameters": {
+          "depth_analysis": true,
+          "volume_profile": true,
+          "liquidity_threshold_btc": 10,
+          "slippage_estimation": true
+        }
+      }
+    }
+  },
+  "trading_parameters": {
+    "max_position_size_percent": 20,
+    "max_leverage": 3,
+    "trading_pairs": ["BTC-USDT", "ETH-USDT", "SOL-USDT"],
+    "default_order_type": "limit",
+    "signal_threshold": 0.65,
+    "min_confidence": 0.7
+  },
+  "risk_parameters": {
+    "max_drawdown_percent": 15,
+    "stop_loss_percent": 2.5,
+    "take_profit_percent": 5,
+    "position_sizing_method": "kelly",
+    "max_open_positions": 3,
+    "correlation_threshold": 0.7
+  },
+  "execution_parameters": {
+    "order_execution_type": "smart",
+    "retry_attempts": 3,
+    "execution_timeout_ms": 5000,
+    "slippage_tolerance_percent": 0.1
+  },
+  "system_parameters": {
+    "data_refresh_frequency_ms": 1000,
+    "model_update_frequency_minutes": 60,
+    "log_level": "info",
+    "backtest_mode": false
+  }
+} 
